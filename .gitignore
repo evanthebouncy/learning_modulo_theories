@@ -1,3 +1,8 @@
+# my gitignore Kappa
+CLEVR_v1.0/
+*.swp
+*.swo
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
