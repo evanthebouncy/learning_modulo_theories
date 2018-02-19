@@ -8,7 +8,7 @@ SHAPE = ["cube", "sphere", "cylinder"]
 MATERIAL = ["rubber", "metal"]
 X = list(range(20))
 Y = list(range(20))
-N_OBJ = 12
+N_OBJ = 20
 
 class LogicalScene:
 
@@ -49,16 +49,20 @@ class LogicalScene:
       self.add_attr(idx, 'color', obj['color'])
       self.add_attr(idx, 'shape', obj['shape'])
       self.add_attr(idx, 'material', obj['material'])
+    # objects to the left of idx1
     for idx1, left in enumerate(scene['relationships']['left']):
       for idx2 in left:
-        self.add_rel('x', idx1, idx2)
+        self.add_rel('x', idx2, idx1)
+    # objects to the front of idx1
     for idx1, front in enumerate(scene['relationships']['front']):
       for idx2 in front:
-        self.add_rel('y', idx1, idx2)
+        self.add_rel('y', idx2, idx1)
 
   # express the query as constraints. evaluate the query.
   # assume the z3 formula has been already constructed via dump_z3
   def query(self, query_program):
+    for qq in query_program:
+      print qq
     partial_evals = [None for _ in range(len(query_program))]
     for idx, fun in enumerate(query_program):
       ftype = fun['function']
@@ -121,14 +125,124 @@ class LogicalScene:
         partial_evals[idx] = gt
         self.s.add(gt == input_value1 > input_value2)
         continue
-      else:
-        print ftype
-        assert 0, "not implemented for this ftype"
+      
+      # takes in a list of objects and return the only one that exists as a Int index
+      if ftype == 'unique':
+        input_value = partial_evals[fun['inputs'][0]]
+        # add a integer z3 value to keep track of the index
+        unique = Int('unique_{}'.format(idx))
+        partial_evals[idx] = unique 
+        # add the constraint for the index of it
+        self.s.add(Or(*input_value))
+        for ii in range(N_OBJ):
+          self.s.add(Implies(input_value[ii], unique == ii))
+        continue
+
+      # return a bitmask of objects with same attr as the index object (except not the index)
+      if 'same' in ftype:
+        input_value = partial_evals[fun['inputs'][0]]
+        existence = self.s_obj
+        # create variables for the next function call
+        same_objs = [Bool('same_{}_{}'.format(idx, i)) for i in range(N_OBJ)]
+        partial_evals[idx] = same_objs
+        # add constraints depends on the filtered type and filterd values
+        # to be added, it needs to first exist, and same attribute, and not the same id as index
+        if 'size' in ftype:
+          size_value = self.s_size(input_value)
+          for ii in range(N_OBJ):
+            self.s.add(same_objs[ii] == And(existence[ii],
+                                            self.s_size(ii) == size_value,
+                                            input_value != ii))
+          continue
+        if 'color' in ftype:
+          color_value = self.s_color(input_value)
+          for ii in range(N_OBJ):
+            self.s.add(same_objs[ii] == And(existence[ii],
+                                            self.s_color(ii) == color_value,
+                                            input_value != ii))
+          continue
+        if 'shape' in ftype:
+          shape_value = self.s_shape(input_value)
+          for ii in range(N_OBJ):
+            self.s.add(same_objs[ii] == And(existence[ii],
+                                            self.s_shape(ii) == shape_value,
+                                            input_value != ii))
+          continue
+        if 'material' in ftype:
+          material_value = self.s_material(input_value)
+          for ii in range(N_OBJ):
+            self.s.add(same_objs[ii] == And(existence[ii],
+                                            self.s_material(ii) == material_value,
+                                            input_value != ii))
+          continue
+
+      if 'query' in ftype:
+        input_value = partial_evals[fun['inputs'][0]]
+        # add a integer z3 value to keep track of the queried attribute
+        query_attr = Int('query_{}'.format(idx))
+        partial_evals[idx] = query_attr 
+        # grab the appropriate attributes
+        if 'size' in ftype: self.s.add(query_attr == self.s_size(input_value))
+        if 'color' in ftype: self.s.add(query_attr == self.s_color(input_value))
+        if 'shape' in ftype: self.s.add(query_attr == self.s_shape(input_value))
+        if 'material' in ftype: self.s.add(query_attr == self.s_material(input_value))
+        continue
+
+      if 'equal' in ftype:
+        input_value1 = partial_evals[fun['inputs'][0]]
+        input_value2 = partial_evals[fun['inputs'][1]]
+        # add a bool z3 value to keep track of if greater
+        eq = Bool('eq_{}'.format(idx))
+        partial_evals[idx] = eq
+        self.s.add(eq == (input_value1 == input_value2))
+        continue
+
+      if ftype == 'relate':
+        input_value = partial_evals[fun['inputs'][0]]
+        existence = self.s_obj
+        # create variables for the next function call
+        rel_objs = [Bool('rel_{}_{}'.format(idx, i)) for i in range(N_OBJ)]
+        partial_evals[idx] = rel_objs
+        if fun['value_inputs'][0] == 'left':
+          for ii in range(N_OBJ):
+            self.s.add(rel_objs[ii] == And(existence[ii], self.s_x(ii) < self.s_x(input_value)))
+          continue
+        if fun['value_inputs'][0] == 'right':
+          for ii in range(N_OBJ):
+            self.s.add(rel_objs[ii] == And(existence[ii], self.s_x(ii) > self.s_x(input_value)))
+          continue
+        if fun['value_inputs'][0] == 'in front':
+          for ii in range(N_OBJ):
+            self.s.add(rel_objs[ii] == And(existence[ii], self.s_y(ii) < self.s_y(input_value)))
+          continue
+        if fun['value_inputs'][0] == 'behind':
+          for ii in range(N_OBJ):
+            self.s.add(rel_objs[ii] == And(existence[ii], self.s_y(ii) > self.s_y(input_value)))
+          continue
+
+      if ftype == 'intersect':
+        input_value1 = partial_evals[fun['inputs'][0]]
+        input_value2 = partial_evals[fun['inputs'][1]]
+        # create variables for the next function call
+        int_objs = [Bool('int_{}_{}'.format(idx, i)) for i in range(N_OBJ)]
+        partial_evals[idx] = int_objs
+        for ii in range(N_OBJ):
+          self.s.add(int_objs[ii] == And(input_value1[ii], input_value2[ii]))
+        continue
+        
+      print ftype
+      print fun
+      assert 0, "[UROD BLLYAT] not implemented for this ftype "
     for pe in partial_evals:
       print pe
       print
     result = partial_evals[-1]
     self.s.check()
+    model = self.s.model()
+    for x in partial_evals[12]:
+      print "i am exist ", x, model[x]
+    print model[partial_evals[4]]
+    print self.x_rels
     return self.s.model()[result]
 
   def dump_z3(self):
@@ -236,9 +350,15 @@ def test3():
   questions = json.load(open(questions_loc))
 
   scene = scenes['scenes'][0]
+  question = questions['questions'][3]
+
+  print scene['image_filename'], question['image_filename']
+  assert scene['image_filename'] == question['image_filename'], "not same file Kappa"
+
+  print question['question']
+
   l_scene.parse_scene(scene)
   l_scene.dump_z3()
-  question = questions['questions'][0]
   qry_ans = l_scene.query(question['program'])
 
   print qry_ans
