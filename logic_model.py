@@ -8,7 +8,7 @@ SHAPE = ["cube", "sphere", "cylinder"]
 MATERIAL = ["rubber", "metal"]
 X = list(range(20))
 Y = list(range(20))
-N_OBJ = 100
+N_OBJ = 20
 
 class LogicalScene:
 
@@ -35,6 +35,22 @@ class LogicalScene:
   def add_rel(self, rel_type, obj_id1, obj_id2):
     if rel_type == "x": self.x_rels.append( (obj_id1, obj_id2) )
     if rel_type == "y": self.y_rels.append( (obj_id1, obj_id2) )
+
+  def parse_scene(self, scene):
+    print scene.keys()
+    for idx, obj in enumerate(scene['objects']):
+      self.add_obj()
+      print obj
+      self.add_attr(idx, 'size', obj['size'])
+      self.add_attr(idx, 'color', obj['color'])
+      self.add_attr(idx, 'shape', obj['shape'])
+      self.add_attr(idx, 'material', obj['material'])
+    for idx1, left in enumerate(scene['relationships']['left']):
+      for idx2 in left:
+        self.add_rel('x', idx1, idx2)
+    for idx1, front in enumerate(scene['relationships']['front']):
+      for idx2 in front:
+        self.add_rel('y', idx1, idx2)
 
   def dump_z3(self):
     # make solver and relations
@@ -79,7 +95,7 @@ class LogicalScene:
       self.s.add(self.s_y(obj1) < self.s_y(obj2))
 
     self.s.check()
-    print self.s.model()
+    return self.s.model()
     
 # ================================= Some Test Code ================================= #
 def test1():
@@ -119,8 +135,19 @@ def test1():
   l_scene.add_rel("y", 2, 0)
   l_scene.add_rel("y", 2, 1)
 
-  l_scene.dump_z3()
+  print l_scene.dump_z3()
+
+def test2():
+  l_scene = LogicalScene()
+  scenes_loc = './CLEVR_v1.0/scenes/scenes_1000.json'
+  import json
+  scenes = json.load(open(scenes_loc))
+  print "scenes loaded ", len(scenes['scenes'])
+  scene0 = scenes['scenes'][0]
+  l_scene.parse_scene(scene0)
+  print l_scene.dump_z3()
 
 if __name__ == "__main__":
   print "hello!"
-  test1()
+  # test1()
+  test2()
