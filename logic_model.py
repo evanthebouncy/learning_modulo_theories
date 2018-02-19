@@ -8,7 +8,7 @@ SHAPE = ["cube", "sphere", "cylinder"]
 MATERIAL = ["rubber", "metal"]
 X = list(range(20))
 Y = list(range(20))
-N_OBJ = 30
+N_OBJ = 12
 
 class LogicalScene:
 
@@ -55,6 +55,81 @@ class LogicalScene:
     for idx1, front in enumerate(scene['relationships']['front']):
       for idx2 in front:
         self.add_rel('y', idx1, idx2)
+
+  # express the query as constraints. evaluate the query.
+  # assume the z3 formula has been already constructed via dump_z3
+  def query(self, query_program):
+    partial_evals = [None for _ in range(len(query_program))]
+    for idx, fun in enumerate(query_program):
+      ftype = fun['function']
+
+      # the scene function returns a bit-mask of all objects constrained on their existence
+      # aka the solver s_obj already created by dump_z3
+      if ftype == 'scene':
+        partial_evals[idx] = self.s_obj
+        continue
+
+      # the filtering functions additionally create bit-mask of the output of filtering 
+      if 'filter' in ftype:
+        # get the input objects to the filter function
+        input_value = partial_evals[fun['inputs'][0]]
+        # create variables for the next function call
+        nxt_objs = [Bool('filter_{}_{}'.format(idx, i)) for i in range(N_OBJ)]
+        partial_evals[idx] = nxt_objs
+        # add constraints depends on the filtered type and filterd values
+        if 'size' in ftype:
+          size_value = SIZE.index(fun['value_inputs'][0])
+          for ii in range(N_OBJ):
+            self.s.add(nxt_objs[ii] == And(input_value[ii], self.s_size(ii) == size_value))
+          continue
+        if 'color' in ftype:
+          color_value = COLOR.index(fun['value_inputs'][0])
+          for ii in range(N_OBJ):
+            self.s.add(nxt_objs[ii] == And(input_value[ii], self.s_color(ii) == color_value))
+          continue
+        if 'shape' in ftype:
+          shape_value = SHAPE.index(fun['value_inputs'][0])
+          for ii in range(N_OBJ):
+            self.s.add(nxt_objs[ii] == And(input_value[ii], self.s_shape(ii) == shape_value))
+          continue
+        if 'material' in ftype:
+          material_value = MATERIAL.index(fun['value_inputs'][0])
+          for ii in range(N_OBJ):
+            self.s.add(nxt_objs[ii] == And(input_value[ii], self.s_material(ii) == material_value))
+          continue
+
+      # count the number of existing objects in the input bitmask by adding
+      if ftype == 'count':
+        # get the input objects to the filter function
+        input_value = partial_evals[fun['inputs'][0]]
+        # add a integer z3 value to keep track of how many
+        cnt = Int('cnt_{}'.format(idx))
+        partial_evals[idx] = cnt 
+        # constrain it to the size
+        one_counts = [Int('one_count_{}_{}'.format(idx, ii)) for ii in range(N_OBJ)]
+        for ii in range(N_OBJ):
+          self.s.add(one_counts[ii] == If(input_value[ii], 1, 0))
+        self.s.add(cnt == sum(one_counts))
+        continue
+
+      # take 2 z3 integer values and compare if it is greater
+      if ftype == 'greater_than':
+        input_value1 = partial_evals[fun['inputs'][0]]
+        input_value2 = partial_evals[fun['inputs'][1]]
+        # add a bool z3 value to keep track of if greater
+        gt = Int('gt_{}'.format(idx))
+        partial_evals[idx] = gt
+        self.s.add(gt == input_value1 > input_value2)
+        continue
+      else:
+        print ftype
+        assert 0, "not implemented for this ftype"
+    for pe in partial_evals:
+      print pe
+      print
+    result = partial_evals[-1]
+    self.s.check()
+    return self.s.model()[result]
 
   def dump_z3(self):
     # make solver and relations
@@ -152,7 +227,27 @@ def test2():
     l_scene.parse_scene(scene)
     print l_scene.dump_z3()
 
+def test3():
+  l_scene = LogicalScene()
+  scenes_loc = './CLEVR_v1.0/scenes/scenes_1000.json'
+  questions_loc = './CLEVR_v1.0/questions/questions_1000.json'
+  import json
+  scenes = json.load(open(scenes_loc))
+  questions = json.load(open(questions_loc))
+
+  scene = scenes['scenes'][0]
+  l_scene.parse_scene(scene)
+  l_scene.dump_z3()
+  question = questions['questions'][0]
+  qry_ans = l_scene.query(question['program'])
+
+  print qry_ans
+  print question['answer']
+
+
+
 if __name__ == "__main__":
   print "hello!"
   # test1()
-  test2()
+  #test2()
+  test3()
