@@ -8,12 +8,15 @@ SHAPE = ["cube", "sphere", "cylinder"]
 MATERIAL = ["rubber", "metal"]
 X = list(range(20))
 Y = list(range(20))
-N_OBJ = 20
+N_OBJ = 30
 
 class LogicalScene:
 
   def __init__(self):
     print "initializing logical scene"
+    self.clear_state()
+
+  def clear_state(self):
     self.objs = []
     self.size, self.color, self.shape, self.material =\
     dict(), dict(), dict(), dict()
@@ -37,7 +40,8 @@ class LogicalScene:
     if rel_type == "y": self.y_rels.append( (obj_id1, obj_id2) )
 
   def parse_scene(self, scene):
-    print scene.keys()
+    # clear internal states when parsing a scene for supervised learning
+    self.clear_state()
     for idx, obj in enumerate(scene['objects']):
       self.add_obj()
       print obj
@@ -143,9 +147,10 @@ def test2():
   import json
   scenes = json.load(open(scenes_loc))
   print "scenes loaded ", len(scenes['scenes'])
-  scene0 = scenes['scenes'][0]
-  l_scene.parse_scene(scene0)
-  print l_scene.dump_z3()
+  for scene in scenes['scenes']:
+    # scene = scenes['scenes'][2]
+    l_scene.parse_scene(scene)
+    print l_scene.dump_z3()
 
 if __name__ == "__main__":
   print "hello!"
