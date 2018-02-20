@@ -10,6 +10,27 @@ X = list(range(20))
 Y = list(range(20))
 N_OBJ = 20
 
+def translate_answer(fun, z3_var):
+  ftype = fun['function']
+  print fun, z3_var
+  if ftype in ["exist", "greater_than", 'less_than', 'equal_size',
+               'equal_color', 'equal_shape', 'equal_material',
+               'equal_integer']:
+    return 'yes' if z3_var.__bool__() else 'no'
+  if ftype in ["count"]:
+    return str(z3_var.as_long())
+  if 'query' in ftype:
+    attr_idx = z3_var.as_long()
+    if 'size' in ftype: return SIZE[attr_idx]
+    if 'color' in ftype: return COLOR[attr_idx]
+    if 'shape' in ftype: return SHAPE[attr_idx]
+    if 'material' in ftype: return MATERIAL[attr_idx]
+
+
+  print ftype
+  assert 0, 'urod blyat unimplemented'
+
+
 class LogicalScene:
 
   def __init__(self):
@@ -61,8 +82,8 @@ class LogicalScene:
   # express the query as constraints. evaluate the query.
   # assume the z3 formula has been already constructed via dump_z3
   def query(self, query_program):
-    for qq in query_program:
-      print qq
+    for iiddxx, qq in enumerate(query_program):
+      print iiddxx, qq
     partial_evals = [None for _ in range(len(query_program))]
     for idx, fun in enumerate(query_program):
       ftype = fun['function']
@@ -121,9 +142,20 @@ class LogicalScene:
         input_value1 = partial_evals[fun['inputs'][0]]
         input_value2 = partial_evals[fun['inputs'][1]]
         # add a bool z3 value to keep track of if greater
-        gt = Int('gt_{}'.format(idx))
+        gt = Bool('gt_{}'.format(idx))
         partial_evals[idx] = gt
         self.s.add(gt == input_value1 > input_value2)
+        continue
+
+      # take 2 z3 integer values and compare if it is less
+      if ftype == 'less_than':
+        input_value1 = partial_evals[fun['inputs'][0]]
+        input_value2 = partial_evals[fun['inputs'][1]]
+        # add a bool z3 value to keep track of if greater
+        lt = Bool('lt_{}'.format(idx))
+        partial_evals[idx] = lt
+        # self.s.add(lt == input_value1 < input_value2) WHY IS THIS BUGGY?!
+        self.s.add(lt == input_value2 > input_value1)
         continue
       
       # takes in a list of objects and return the only one that exists as a Int index
@@ -211,7 +243,7 @@ class LogicalScene:
           for ii in range(N_OBJ):
             self.s.add(rel_objs[ii] == And(existence[ii], self.s_x(ii) > self.s_x(input_value)))
           continue
-        if fun['value_inputs'][0] == 'in front':
+        if fun['value_inputs'][0] == 'front':
           for ii in range(N_OBJ):
             self.s.add(rel_objs[ii] == And(existence[ii], self.s_y(ii) < self.s_y(input_value)))
           continue
@@ -229,6 +261,24 @@ class LogicalScene:
         for ii in range(N_OBJ):
           self.s.add(int_objs[ii] == And(input_value1[ii], input_value2[ii]))
         continue
+
+      if ftype == 'union':
+        input_value1 = partial_evals[fun['inputs'][0]]
+        input_value2 = partial_evals[fun['inputs'][1]]
+        # create variables for the next function call
+        int_objs = [Bool('int_{}_{}'.format(idx, i)) for i in range(N_OBJ)]
+        partial_evals[idx] = int_objs
+        for ii in range(N_OBJ):
+          self.s.add(int_objs[ii] == Or(input_value1[ii], input_value2[ii]))
+        continue
+
+      if ftype == 'exist':
+        input_value = partial_evals[fun['inputs'][0]]
+        exist = Bool('exist_{}'.format(idx))
+        partial_evals[idx] = exist
+        # add the constraint
+        self.s.add(exist == Or(*input_value))
+        continue
         
       print ftype
       print fun
@@ -239,11 +289,12 @@ class LogicalScene:
     result = partial_evals[-1]
     self.s.check()
     model = self.s.model()
-    for x in partial_evals[12]:
-      print "i am exist ", x, model[x]
-    print model[partial_evals[4]]
-    print self.x_rels
-    return self.s.model()[result]
+    # for x in partial_evals[12]:
+    #   print "i am exist ", x, model[x]
+    # print "L O O K O V E R H E R E : ", model[partial_evals[3]]
+    # print self.x_rels
+    z3_result = self.s.model()[result]
+    return z3_result
 
   def dump_z3(self):
     # make solver and relations
@@ -349,20 +400,29 @@ def test3():
   scenes = json.load(open(scenes_loc))
   questions = json.load(open(questions_loc))
 
-  scene = scenes['scenes'][0]
-  question = questions['questions'][3]
+#  for i in range(80):
+#    for j in range(10):
+  for i in [9]:
+    for j in [9]:
+      print "running for {} {}".format(i, j)
+      scene = scenes['scenes'][i]
+      question = questions['questions'][i*10+j]
 
-  print scene['image_filename'], question['image_filename']
-  assert scene['image_filename'] == question['image_filename'], "not same file Kappa"
+      print scene['image_filename'], question['image_filename']
+      assert scene['image_filename'] == question['image_filename'], "not same file Kappa"
 
-  print question['question']
+      print question['question']
 
-  l_scene.parse_scene(scene)
-  l_scene.dump_z3()
-  qry_ans = l_scene.query(question['program'])
+      l_scene.parse_scene(scene)
+      l_scene.dump_z3()
+      qry_ans = l_scene.query(question['program'])
 
-  print qry_ans
-  print question['answer']
+      print qry_ans
+
+      qry_ans_translated = translate_answer(question['program'][-1], qry_ans) 
+
+      print "ground truth ", question['answer'], "prediction ", qry_ans_translated
+      assert question['answer'] == qry_ans_translated, "i, j " + str(i) + " " + str(j)
 
 
 
