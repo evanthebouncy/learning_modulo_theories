@@ -144,7 +144,7 @@ class LogicalScene:
         # add a bool z3 value to keep track of if greater
         gt = Bool('gt_{}'.format(idx))
         partial_evals[idx] = gt
-        self.s.add(gt == input_value1 > input_value2)
+        self.s.add(gt == (input_value1 > input_value2))
         continue
 
       # take 2 z3 integer values and compare if it is less
@@ -155,7 +155,7 @@ class LogicalScene:
         lt = Bool('lt_{}'.format(idx))
         partial_evals[idx] = lt
         # self.s.add(lt == input_value1 < input_value2) WHY IS THIS BUGGY?!
-        self.s.add(lt == input_value2 > input_value1)
+        self.s.add(lt == (input_value2 > input_value1))
         continue
       
       # takes in a list of objects and return the only one that exists as a Int index
@@ -289,9 +289,9 @@ class LogicalScene:
     result = partial_evals[-1]
     self.s.check()
     model = self.s.model()
-    # for x in partial_evals[12]:
-    #   print "i am exist ", x, model[x]
-    # print "L O O K O V E R H E R E : ", model[partial_evals[3]]
+#    for x in partial_evals[6]:
+#      print "i am exist ", x, model[x]
+#    print "L O O K O V E R H E R E : ", model[partial_evals[12]]
     # print self.x_rels
     z3_result = self.s.model()[result]
     return z3_result
@@ -400,10 +400,10 @@ def test3():
   scenes = json.load(open(scenes_loc))
   questions = json.load(open(questions_loc))
 
-#  for i in range(80):
-#    for j in range(10):
-  for i in [9]:
-    for j in [9]:
+  for i in range(80):
+    for j in range(10):
+#  for i in [9]:
+#    for j in [9]:
       print "running for {} {}".format(i, j)
       scene = scenes['scenes'][i]
       question = questions['questions'][i*10+j]
@@ -412,6 +412,10 @@ def test3():
       assert scene['image_filename'] == question['image_filename'], "not same file Kappa"
 
       print question['question']
+
+      print
+      print scene
+      print
 
       l_scene.parse_scene(scene)
       l_scene.dump_z3()
@@ -423,6 +427,8 @@ def test3():
 
       print "ground truth ", question['answer'], "prediction ", qry_ans_translated
       assert question['answer'] == qry_ans_translated, "i, j " + str(i) + " " + str(j)
+
+  print "C O N G R A T U L A T I O N S   Y O U   H A V E   W O N "
 
 
 
